@@ -195,6 +195,16 @@ class Tensors(defaultdict):
             tensors = flexible_all_gather(tensors)
             assert tensors.ndim == 1, "Can only aggregate 1D tensors"
 
+            numel = tensors.numel()
+            if numel == 0:
+                nan = float("nan")
+                metrics[f"{key}/mean"] = nan
+                metrics[f"{key}/median"] = nan
+                metrics[f"{key}/std"] = nan
+                metrics[f"{key}/min"] = nan
+                metrics[f"{key}/max"] = nan
+                continue
+
             # Compute relevant tensor statistics
             metrics[f"{key}/mean"] = tensors.mean().item()
             metrics[f"{key}/median"] = torch.median(tensors).item()

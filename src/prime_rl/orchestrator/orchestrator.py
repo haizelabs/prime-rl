@@ -1,3 +1,7 @@
+# Logfire observability - MUST be first before any OpenAI/MCP imports
+import mercor_apex2_env.observability  # noqa: F401
+import logfire
+
 import asyncio
 import random
 import time
@@ -30,6 +34,7 @@ from prime_rl.orchestrator.config import BufferConfig, OrchestratorConfig
 from prime_rl.orchestrator.scheduler import Scheduler
 from prime_rl.orchestrator.utils import (
     get_sampling_args,
+    logfire_log_training_sample,
     print_benchmark,
     set_semaphore,
 )
@@ -247,6 +252,7 @@ async def orchestrate(config: OrchestratorConfig):
 
         # Schedule generating the training batch
         generate_completions_start_time = time.perf_counter()
+        logfire.info("Starting to generate batch for trainer")
         train_task = asyncio.create_task(scheduler.generate_batch(step=progress.step))
 
         # Schedule running evals at the specified interval
@@ -276,6 +282,7 @@ async def orchestrate(config: OrchestratorConfig):
         ):
             last_eval_step = ckpt_step
             logger.info(f"Running evals for checkpoint step {ckpt_step}")
+            logfire.info("Starting to run evals", ckpt_step=ckpt_step)
             eval_task = asyncio.create_task(
                 run_evals(
                     clients=clients,
@@ -306,19 +313,27 @@ async def orchestrate(config: OrchestratorConfig):
             config.rollouts_per_example,
             config.advantage,
         )
+        logfire.info("About to interleave or branch rollouts")
 
-        # Update and sample rollouts from the buffer
         make_train_example = interleave_rollout if config.trajectory_strategy == "interleaved" else branch_rollout
         train_examples: list[TrainingSample] = []
+        rollout_to_examples: list[tuple[vf.State, list[TrainingSample]]] = []
         for train_rollout, advantage in zip(train_rollouts, advantages):
             train_example = make_train_example(train_rollout)
             if train_example is not None:
                 for te in train_example:
                     te.advantage = advantage
                 train_examples.extend(train_example)
-        logger.debug(
+                rollout_to_examples.append((train_rollout, train_example))
+        logfire.info(
             f"Converted {len(train_rollouts)} training rollouts to {len(train_examples)} training examples using {config.trajectory_strategy} strategy"
         )
+
+        if rollout_to_examples:
+            # num_samples = min(5, len(rollout_to_examples))
+            # sampled_pairs = random.sample(rollout_to_examples, num_samples)
+            for i, (rollout, examples) in enumerate(rollout_to_examples):
+                logfire_log_training_sample(rollout, examples, i + 1, len(rollout_to_examples))
 
         training_batch = TrainingBatch(
             examples=train_examples,

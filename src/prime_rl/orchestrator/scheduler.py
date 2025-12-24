@@ -30,6 +30,7 @@ class InflightRolloutInfo(NamedTuple):
     off_policy_steps: int
     client: AsyncOpenAI
 
+import logfire
 
 class Scheduler:
     """Asynchronously schedules group rollout requests and re-schedules them as they complete (continuous batching). Updates policy in between group rollout requests.
@@ -161,6 +162,7 @@ class Scheduler:
 
             self.ckpt_step = next_ckpt_step
 
+    @logfire.instrument()
     async def generate_batch(self, step: int) -> list[vf.State]:
         """Continuously schedules group rollouts, allowing them to be in-flight across steps."""
         self.step = step
