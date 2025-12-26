@@ -60,7 +60,13 @@ class Packer:
         else:
             return False
 
-    def pack(self):
+    def pack(self) -> float | None:
+        """
+        Pack training batches into micro batches and send to trainer.
+
+        Returns:
+            Mean reward from the batches (for best checkpoint tracking), or None if no batches.
+        """
         training_batches: dict[int, TrainingBatch] = self.get_batch()
         start_time = time.time()
         while not self.has_enough_tokens(training_batches):
@@ -72,6 +78,7 @@ class Packer:
 
         train_examples: list[TrainingSample] = []
         train_idxs = []
+        mean_rewards: list[float] = []
         for idx, training_batch in training_batches.items():
             self.runs.progress[idx].step += 1
             self.runs.progress[idx].total_tokens += sum(
@@ -81,6 +88,10 @@ class Packer:
             train_examples.extend(training_batch.examples)
             train_idxs.extend([idx] * len(training_batch.examples))
             self.runs.ready_to_update[idx] = True
+
+            # Collect mean_reward for best checkpoint tracking
+            if training_batch.mean_reward is not None:
+                mean_rewards.append(training_batch.mean_reward)
 
         # TODO: Handle different temperatures for each run
         some_temperature = next(iter(training_batches.values())).temperature
@@ -94,3 +105,6 @@ class Packer:
         )
 
         self.sender.send(micro_batch_grid)
+
+        # Return aggregated mean reward across all batches
+        return sum(mean_rewards) / len(mean_rewards) if mean_rewards else None

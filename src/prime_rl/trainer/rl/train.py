@@ -413,6 +413,31 @@ def train(config: RLTrainerConfig):
         }
         monitor.log(time_metrics)
 
+        # Save best checkpoint if mean_reward improved (only for real DataLoader, not FakeDataLoader)
+        if ckpt_manager is not None and hasattr(dataloader, "last_mean_reward"):
+            logger.info("Attempting to save new best checkpoint...")
+            # Broadcast mean_reward from master to all ranks for distributed checkpoint saving
+            mean_reward_tensor = torch.tensor(
+                [dataloader.last_mean_reward if dataloader.last_mean_reward is not None else float("-inf")],
+                device="cuda",
+            )
+            dist.broadcast(mean_reward_tensor, src=0)
+            mean_reward = mean_reward_tensor.item()
+
+            if mean_reward != float("-inf"):
+                saved_best = ckpt_manager.save_best(
+                    step=progress.step,
+                    metric_value=mean_reward,
+                    metric_name="mean_reward",
+                    model=model,
+                    optimizers=[optimizer],
+                    scheduler=scheduler,
+                    progress=progress,
+                    higher_is_better=True,
+                )
+                if saved_best:
+                    logger.success(f"Saved new best checkpoint at step {progress.step} with mean_reward={mean_reward:.4f}")
+
         progress.step += 1
         is_first_step = False
 

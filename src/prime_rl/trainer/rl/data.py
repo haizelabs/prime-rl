@@ -151,9 +151,12 @@ class DataLoader:
 
         self.receiver: MicroBatchReceiver = setup_micro_batch_receiver(output_dir, dp_rank, start_step, config)
 
+        # Track mean reward from last batch for best checkpoint tracking
+        self.last_mean_reward: float | None = None
+
     def wait_for_batch(self) -> None:
         if self.world.is_master:
-            self.packer.pack()
+            self.last_mean_reward = self.packer.pack()
         self.receiver.wait()
 
     def get_batch(self) -> list[TensorMicroBatch]:

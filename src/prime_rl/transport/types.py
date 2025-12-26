@@ -20,6 +20,7 @@ class TrainingBatch(msgspec.Struct, array_like=True, gc=False, omit_defaults=Tru
     temperature: float
     step: int
     run_idx: int | None = None
+    mean_reward: float | None = None  # For best checkpoint tracking
 
 
 # Packer -> Trainer

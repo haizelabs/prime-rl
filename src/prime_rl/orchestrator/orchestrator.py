@@ -335,10 +335,15 @@ async def orchestrate(config: OrchestratorConfig):
             for i, (rollout, examples) in enumerate(rollout_to_examples):
                 logfire_log_training_sample(rollout, examples, i + 1, len(rollout_to_examples))
 
+
+        # Compute mean reward for best checkpoint tracking
+        mean_reward = sum(rewards) / len(rewards) if rewards else 0.0
+
         training_batch = TrainingBatch(
             examples=train_examples,
             temperature=config.sampling.temperature,
             step=progress.step,
+            mean_reward=mean_reward,
         )
         training_batch_sender.send(training_batch)
 

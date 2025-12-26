@@ -1,7 +1,9 @@
+import json
 import shutil
 import time
 import warnings
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -89,9 +91,83 @@ class CheckpointManager:
         self.world = get_world()
         self.ckpt_steps: list[int] = []  # Sorted list of steps that have been checkpointed, only used on master rank
 
+        # Best checkpoint tracking
+        self.best_metric: float | None = None
+        self.best_step: int | None = None
+
     def get_ckpt_path(self, step: int) -> Path:
         """Get the path to write the trainer checkpoint for a given step."""
         return get_step_path(self.ckpt_dir, step) / "trainer"
+
+    def get_best_path(self) -> Path:
+        """Get the path to write the best checkpoint (always overwrites)."""
+        return self.ckpt_dir / "best" / "trainer"
+
+    def get_best_metadata_path(self) -> Path:
+        """Get the path to the best checkpoint metadata JSON."""
+        return self.ckpt_dir / "best" / "metadata.json"
+
+    def save_best(
+        self,
+        step: int,
+        metric_value: float,
+        metric_name: str,
+        model: nn.Module,
+        optimizers: list[Optimizer],
+        scheduler: LRScheduler,
+        progress: Progress,
+        higher_is_better: bool = True,
+        dataloader: StatefulDataLoader | None = None,
+    ) -> bool:
+        """
+        Save checkpoint if metric is best so far.
+
+        Args:
+            step: Current training step
+            metric_value: The metric value to compare
+            metric_name: Name of the metric (for logging/metadata)
+            model: The model to checkpoint
+            optimizers: List of optimizers
+            scheduler: Learning rate scheduler
+            progress: Training progress state
+            higher_is_better: If True, higher metric is better; if False, lower is better
+            dataloader: Optional dataloader to checkpoint
+
+        Returns:
+            True if a new best checkpoint was saved, False otherwise
+        """
+        is_best = (
+            self.best_metric is None
+            or (higher_is_better and metric_value > self.best_metric)
+            or (not higher_is_better and metric_value < self.best_metric)
+        )
+
+        if not is_best:
+            return False
+
+        self.best_metric = metric_value
+        self.best_step = step
+
+        best_path = self.get_best_path()
+        best_path.parent.mkdir(parents=True, exist_ok=True)
+
+        self.logger.info(f"New best {metric_name}={metric_value:.4f} at step {step}, saving to {best_path.parent}")
+        self.save_to_path(best_path, model, optimizers, scheduler, progress, dataloader)
+
+        # Save metadata JSON (only on master rank)
+        if self.world.is_master:
+            metadata = {
+                "step": step,
+                "metric_name": metric_name,
+                "metric_value": metric_value,
+                "timestamp": datetime.utcnow().isoformat(),
+                "total_tokens": progress.total_tokens,
+                "total_samples": progress.total_samples,
+            }
+            with open(self.get_best_metadata_path(), "w") as f:
+                json.dump(metadata, f, indent=2)
+
+        return True
 
     def save_to_path(
         self,
