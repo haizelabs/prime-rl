@@ -207,6 +207,10 @@ def load_dcp_from_hf(model: nn.Module, config: ModelConfig, parallel_dims: Paral
                 "Found HF weight format in snapshot state dict and PrimeRL weight format in model state dict. Trying to auto-convert..."
             )
             snapshot_path = snapshot_path / "prime"
+            logger.info(f"snapshot_path exists: {snapshot_path.exists()}")
+            logger.info(f"contents: {list(snapshot_path.iterdir()) if snapshot_path.exists() else 'N/A'}")
+            logger.info(f"World: {get_world()}")
+            logger.info(f"is master: {get_world().is_master}")
             if snapshot_path.exists():
                 logger.debug(f"Conversion found at {snapshot_path}.")
             else:
@@ -236,6 +240,7 @@ def load_dcp_from_hf(model: nn.Module, config: ModelConfig, parallel_dims: Paral
     torch.distributed.barrier()
 
     logger.info(f"Loading weights using HF DCP from {snapshot_path}")
+    logger.info(f"contents: {list(snapshot_path.iterdir()) if snapshot_path.exists() else 'N/A'}")
     load_dcp_start_time = time.perf_counter()
     state_dict = model.state_dict()
     state_dict = strip_lora_from_state_dict(state_dict)

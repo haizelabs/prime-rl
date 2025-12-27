@@ -256,6 +256,7 @@ def train(config: RLTrainerConfig):
         cp_size = parallel_dims.cp
 
         for micro_step, micro_batch in enumerate(micro_batches):
+            logger.debug(f"Micro step: {micro_step}")
             input_ids = micro_batch["input_ids"].to("cuda")
             position_ids = micro_batch["position_ids"].to("cuda")
             advantages = micro_batch["advantages"].to("cuda")
@@ -263,6 +264,7 @@ def train(config: RLTrainerConfig):
             inference_logprobs = micro_batch["inference_logprobs"].to("cuda")
 
             if cp_enabled:
+                logger.debug("Setting up cp params")
                 input_ids, forward_position_ids = setup_cp_params(input_ids, position_ids, cp_rank, cp_size, cp_group)
             else:
                 forward_position_ids = position_ids
@@ -270,10 +272,12 @@ def train(config: RLTrainerConfig):
             temperature = micro_batch["temperature"]
 
             # Forward pass
+            logger.debug("Forward pass")
             with maybe_record_function("forward"), maybe_activation_offloading(config.model.ac_offloading):
                 logits = forward(model, input_ids, forward_position_ids).float().contiguous()
 
             if cp_enabled:
+                logger.debug("Get padding logit from prev cp rank")
                 left_pad_logit = get_padding_logit_from_prev_cp_rank(logits, cp_rank, cp_size, cp_group)
             else:
                 left_pad_logit = None
@@ -283,10 +287,12 @@ def train(config: RLTrainerConfig):
             trainer_logprobs = selective_log_softmax(shifted_logits, input_ids)
 
             if cp_enabled:
+                logger.debug("dist_nn all gather")
                 trainer_logprobs = dist_nn.all_gather(trainer_logprobs, group=cp_group)
                 trainer_logprobs = torch.cat(trainer_logprobs, dim=1)
 
             # Compute loss
+            logger.debug("computing loss")
             response_lengths = get_response_lengths(position_ids)
             loss, loss_tensors = compute_loss(
                 trainer_logprobs=trainer_logprobs.squeeze().split(response_lengths),
@@ -296,11 +302,14 @@ def train(config: RLTrainerConfig):
                 loss_config=config.loss,
                 loss_scale=loss_scale,
             )
+            logger.debug("Loss computed")
 
             # Compute entropy
+            logger.debug("computing entropy")
             entropy = compute_entropy(shifted_logits)
 
             if cp_enabled:
+                logger.debug("Gathering entropies")
                 entropies = [torch.zeros_like(entropy) for _ in range(cp_size)]
                 dist.all_gather(entropies, entropy, group=cp_group)
                 entropy = torch.cat(entropies, dim=1)
@@ -309,8 +318,11 @@ def train(config: RLTrainerConfig):
             del logits, shifted_logits
 
             # Backward pass
+            logger.debug("Backward pass")
             with maybe_record_function("backward"):
                 loss.backward()
+
+            logger.debug("Finished backward pass")
 
             # Add relevant tensors to tensor dict for logging purposes
             tensors["trainer_probs"].append(torch.exp(trainer_logprobs)[loss_mask].detach().to("cpu"))
@@ -318,11 +330,14 @@ def train(config: RLTrainerConfig):
             tensors["entropy"].append(entropy[loss_mask].detach().to("cpu"))
             tensors["loss"].append(loss.detach().to("cpu").unsqueeze(0))
 
+            logger.debug("Load balance stats")
             if is_tt_moe_model(model):
                 load_balance_stats = get_load_balance_stats(model)
                 for k, v in load_balance_stats.items():
                     if v is not None:
                         tensors[k].append(v)
+
+            logger.debug("loss tensors")
 
             # Add loss tensors to tensor dict for logging purposes
             for key, loss_tensor in loss_tensors.items():
