@@ -453,6 +453,11 @@ def train(config: RLTrainerConfig):
                 if saved_best:
                     logger.success(f"Saved new best checkpoint at step {progress.step} with mean_reward={mean_reward:.4f}")
 
+                    if weight_ckpt_manager is not None:
+                        logger.info(f"Saving weight checkpoint at step {progress.step}")
+                        weight_ckpt_manager.save(progress.step, model, tokenizer)
+                        weight_ckpt_manager.maybe_clean()
+
         progress.step += 1
         is_first_step = False
 
