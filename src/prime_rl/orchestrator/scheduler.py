@@ -30,7 +30,9 @@ class InflightRolloutInfo(NamedTuple):
     off_policy_steps: int
     client: AsyncOpenAI
 
+
 import logfire
+
 
 class Scheduler:
     """Asynchronously schedules group rollout requests and re-schedules them as they complete (continuous batching). Updates policy in between group rollout requests.
@@ -64,7 +66,9 @@ class Scheduler:
         self.batch_size = config.batch_size
         self.rollouts_per_example = config.rollouts_per_example
         self.seq_len = config.seq_len
-        self.problems_per_batch = int(oversampling_factor * self.batch_size // self.rollouts_per_example)
+        self.problems_per_batch = int(
+            oversampling_factor * self.batch_size // self.rollouts_per_example
+        )
         self.max_async_level = max_async_level
         self.max_off_policy_steps = max_off_policy_steps
         self.strict_async_level = strict_async_level
@@ -94,7 +98,9 @@ class Scheduler:
             )
         )
         await asyncio.sleep(0)
-        self.inflight_group_rollouts[group_rollout_request] = InflightRolloutInfo(0, client)
+        self.inflight_group_rollouts[group_rollout_request] = InflightRolloutInfo(
+            0, client
+        )
 
     async def update_policy_loop(self):
         """Continuously checks for new policy checkpoints."""
@@ -104,10 +110,14 @@ class Scheduler:
 
     async def update_policy(self):
         """Updates the policy to the latest available checkpoint. Aborts rollout requests that are older than the max retention steps."""
-        latest_ckpt_step = get_latest_ckpt_step(get_broadcast_dir(self.config.output_dir)) or 0
+        latest_ckpt_step = (
+            get_latest_ckpt_step(get_broadcast_dir(self.config.output_dir)) or 0
+        )
         async_away_ckpt_step = max(self.step - self.max_async_level, 0)
         next_ckpt_step = (
-            async_away_ckpt_step if self.strict_async_level else max(async_away_ckpt_step, latest_ckpt_step)
+            async_away_ckpt_step
+            if self.strict_async_level
+            else max(async_away_ckpt_step, latest_ckpt_step)
         )
         if next_ckpt_step > self.ckpt_step:
             if next_ckpt_step == async_away_ckpt_step:
@@ -116,9 +126,16 @@ class Scheduler:
                 )
                 self.checkpoint_ready.clear()
                 wait_for_ckpt_start_time = time.perf_counter()
-                await wait_for_path(get_step_path(get_broadcast_dir(self.config.output_dir), next_ckpt_step) / "STABLE")
+                await wait_for_path(
+                    get_step_path(
+                        get_broadcast_dir(self.config.output_dir), next_ckpt_step
+                    )
+                    / "STABLE"
+                )
                 self.wait_for_ckpt_time = time.perf_counter() - wait_for_ckpt_start_time
-                self.logger.debug(f"Waited for checkpoint {next_ckpt_step} for {self.wait_for_ckpt_time:.2f}s")
+                self.logger.debug(
+                    f"Waited for checkpoint {next_ckpt_step} for {self.wait_for_ckpt_time:.2f}s"
+                )
             self.logger.debug(
                 f"Got new policy with step {next_ckpt_step}. Updating weights and cancelling old rollout requests."
             )
@@ -126,11 +143,15 @@ class Scheduler:
             update_weights_start_time = time.perf_counter()
             await update_weights(
                 self.admin_clients,
-                get_step_path(get_broadcast_dir(self.config.output_dir), next_ckpt_step),
+                get_step_path(
+                    get_broadcast_dir(self.config.output_dir), next_ckpt_step
+                ),
                 lora_name=self.lora_name,
             )
             self.update_weights_time = time.perf_counter() - update_weights_start_time
-            self.logger.debug(f"Updated weights to step {next_ckpt_step} in {self.update_weights_time:.2f}s")
+            self.logger.debug(
+                f"Updated weights to step {next_ckpt_step} in {self.update_weights_time:.2f}s"
+            )
             if self.lora_name is not None:
                 self.model_name = self.lora_name
             self.checkpoint_ready.set()
@@ -139,7 +160,10 @@ class Scheduler:
             tasks_to_remove = []
             tasks_to_update = []
 
-            for task, (off_policy_steps, client) in self.inflight_group_rollouts.items():
+            for task, (
+                off_policy_steps,
+                client,
+            ) in self.inflight_group_rollouts.items():
                 if off_policy_steps > self.max_off_policy_steps and task.cancel():
                     tasks_to_remove.append((task, client))
                 else:
@@ -158,7 +182,9 @@ class Scheduler:
                     )
 
             if len(tasks_to_remove) > 0:
-                self.logger.warning(f"Cancelled and re-scheduled {len(tasks_to_remove)} old rollout requests.")
+                self.logger.warning(
+                    f"Cancelled and re-scheduled {len(tasks_to_remove)} old rollout requests."
+                )
 
             self.ckpt_step = next_ckpt_step
 
@@ -175,8 +201,19 @@ class Scheduler:
         batch_rollouts: list[vf.State] = []
         pbar = tqdm(total=self.config.batch_size, desc="Generating rollouts (train)")
         while len(batch_rollouts) < self.config.batch_size:
+
+            # Copy keys to avoid race conditions with update_policy()
+            tasks_to_wait_on = list(self.inflight_group_rollouts.keys())
+
+            # If all tasks were cancelled, schedule new ones
+            if not tasks_to_wait_on:
+                self.logger.debug("No inflight rollouts, scheduling new ones")
+                while len(self.inflight_group_rollouts) < self.problems_per_batch:
+                    await self.schedule_group_rollout()
+                tasks_to_wait_on = list(self.inflight_group_rollouts.keys())
+
             finished_group_rollouts, _ = await asyncio.wait(
-                self.inflight_group_rollouts, return_when=asyncio.FIRST_COMPLETED
+                tasks_to_wait_on, return_when=asyncio.FIRST_COMPLETED
             )
 
             await self.checkpoint_ready.wait()
@@ -189,15 +226,25 @@ class Scheduler:
                 # Safely pop the task info. If it returns None, the task was removed externally.
                 # This handles the race condition where update_policy() might have concurrently
                 # cancelled the task and removed it from inflight_group_rollouts.
-                popped_info = self.inflight_group_rollouts.pop(finished_group_rollout, None)
+                popped_info = self.inflight_group_rollouts.pop(
+                    finished_group_rollout, None
+                )
                 if popped_info is None:
                     continue
                 _, client = popped_info
 
-                group_states: list[vf.State] = finished_group_rollout.result()
+                # Handle cancelled tasks gracefully
+                try:
+                    group_states: list[vf.State] = finished_group_rollout.result()
+                except asyncio.CancelledError:
+                    self.logger.debug(f"Rollout task was cancelled, re-scheduling")
+                    await self.schedule_group_rollout(client)
+                    continue
 
                 self.buffer.update(group_states)
-                accepted_rollouts = self.buffer.sample_rollouts(n=self.config.rollouts_per_example)
+                accepted_rollouts = self.buffer.sample_rollouts(
+                    n=self.config.rollouts_per_example
+                )
 
                 batch_rollouts.extend(accepted_rollouts)
                 pbar.update(len(accepted_rollouts))
@@ -210,19 +257,28 @@ class Scheduler:
     def max_off_policy_level(self) -> int:
         if not self.inflight_group_rollouts:
             return 0
-        return max(retention_step for retention_step, _ in self.inflight_group_rollouts.values())
+        return max(
+            retention_step
+            for retention_step, _ in self.inflight_group_rollouts.values()
+        )
 
     @property
     def min_off_policy_level(self) -> int:
         if not self.inflight_group_rollouts:
             return 0
-        return min(retention_step for retention_step, _ in self.inflight_group_rollouts.values())
+        return min(
+            retention_step
+            for retention_step, _ in self.inflight_group_rollouts.values()
+        )
 
     @property
     def mean_off_policy_level(self) -> float:
         if not self.inflight_group_rollouts:
             return 0
-        retention_steps = [retention_step for retention_step, _ in self.inflight_group_rollouts.values()]
+        retention_steps = [
+            retention_step
+            for retention_step, _ in self.inflight_group_rollouts.values()
+        ]
         return sum(retention_steps) / len(retention_steps)
 
     @property
