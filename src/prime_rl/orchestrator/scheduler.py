@@ -201,19 +201,8 @@ class Scheduler:
         batch_rollouts: list[vf.State] = []
         pbar = tqdm(total=self.config.batch_size, desc="Generating rollouts (train)")
         while len(batch_rollouts) < self.config.batch_size:
-
-            # Copy keys to avoid race conditions with update_policy()
-            tasks_to_wait_on = list(self.inflight_group_rollouts.keys())
-
-            # If all tasks were cancelled, schedule new ones
-            if not tasks_to_wait_on:
-                self.logger.debug("No inflight rollouts, scheduling new ones")
-                while len(self.inflight_group_rollouts) < self.problems_per_batch:
-                    await self.schedule_group_rollout()
-                tasks_to_wait_on = list(self.inflight_group_rollouts.keys())
-
             finished_group_rollouts, _ = await asyncio.wait(
-                tasks_to_wait_on, return_when=asyncio.FIRST_COMPLETED
+                self.inflight_group_rollouts, return_when=asyncio.FIRST_COMPLETED
             )
 
             await self.checkpoint_ready.wait()
