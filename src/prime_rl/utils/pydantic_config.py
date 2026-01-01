@@ -97,13 +97,16 @@ class BaseSettings(PydanticBaseSettings):
     )
 
 
-def check_path_and_handle_inheritance(path: Path, seen_files: list[Path], nested_key: str | None) -> bool | None:
+def check_path_and_handle_inheritance(
+    path: Path, seen_files: list[Path], nested_key: str | None
+) -> bool | None:
     """
     Recursively look for inheritance in a toml file. Return a list of all toml files to load.
 
     Example:
         If config.toml has `toml_files = ["base.toml"]` and base.toml has
-        `toml_files = ["common.toml"]`, this returns ["config.toml", "base.toml", "common.toml"]
+        `toml_files = ["common.toml"]`, this returns ["common.toml", "base.toml", "config.toml"]
+        (base files first, then main file, so main file can override base files)
         nested_key: smth like "train.optim"
 
     Returns:
@@ -130,12 +133,12 @@ def check_path_and_handle_inheritance(path: Path, seen_files: list[Path], nested
         with open(path, "wb") as f:
             tomli_w.dump(data, f)
 
-    seen_files.append(path)
-
     recurence = False
     if "toml_files" in data:
         if nested_key is not None:
-            raise NotImplementedError("--train @ helo.toml where helo.toml point to a tom file is not yet supported")
+            raise NotImplementedError(
+                "--train @ helo.toml where helo.toml point to a tom file is not yet supported"
+            )
         maybe_new_files = [path.parent / file for file in data["toml_files"]]
 
         files = [file for file in maybe_new_files if str(file).endswith(".toml")]
@@ -143,6 +146,8 @@ def check_path_and_handle_inheritance(path: Path, seen_files: list[Path], nested
         for file in files:
             recurence = True
             check_path_and_handle_inheritance(file, seen_files, nested_key=None)
+
+    seen_files.append(path)
 
     return recurence
 
@@ -166,7 +171,9 @@ def extract_toml_paths(args: list[str]) -> tuple[list[str], list[str]]:
             else:
                 nested_key = None
 
-            recurence = recurence or check_path_and_handle_inheritance(Path(toml_path), toml_paths, nested_key)
+            recurence = recurence or check_path_and_handle_inheritance(
+                Path(toml_path), toml_paths, nested_key
+            )
             cli_toml_file_count += 1
 
     if recurence and cli_toml_file_count > 1:
@@ -205,7 +212,9 @@ def get_all_fields(model: BaseModel | type) -> list[str]:
     return fields
 
 
-def parse_unknown_args(args: list[str], config_cls: type) -> tuple[list[str], list[str]]:
+def parse_unknown_args(
+    args: list[str], config_cls: type
+) -> tuple[list[str], list[str]]:
     known_fields = get_all_fields(config_cls)
     known_args = []
     unknown_args = []
