@@ -449,6 +449,7 @@ def train(config: RLTrainerConfig):
                     scheduler=scheduler,
                     progress=progress,
                     higher_is_better=True,
+                    best_exit=True,
                 )
                 if saved_best:
                     logger.success(f"Saved new best checkpoint at step {progress.step} with mean_reward={mean_reward:.4f}")

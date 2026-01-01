@@ -4,7 +4,9 @@ from pydantic import BaseModel, Field, model_validator
 
 from prime_rl.utils.pydantic_config import BaseConfig
 
-AttnImplementation: TypeAlias = Literal["sdpa", "flash_attention_2", "flash_attention_3"]
+AttnImplementation: TypeAlias = Literal[
+    "sdpa", "flash_attention_2", "flash_attention_3"
+]
 
 MOE_MODEL_MAPS = {
     "Qwen/Qwen3-30B-A3B": "Jackmin108/Qwen3-30B-A3B-Fast",
@@ -27,7 +29,10 @@ class ActivationCheckpointConfig(BaseConfig):
 class ActivationOffloadingConfig(BaseConfig):
     """Configures the activation offloading."""
 
-    pin_memory: Annotated[bool, Field(description="Whether to pin the offloaded activations to CPU memory.")] = True
+    pin_memory: Annotated[
+        bool,
+        Field(description="Whether to pin the offloaded activations to CPU memory."),
+    ] = True
 
     max_inflight_activations: Annotated[
         int,
@@ -124,9 +129,13 @@ class ModelConfig(BaseConfig):
         ),
     ] = "Qwen/Qwen3-0.6B"
 
-    seq_len: Annotated[int, Field(description="The sequence length to use for the model.")] = 2048
+    seq_len: Annotated[
+        int, Field(description="The sequence length to use for the model.")
+    ] = 2048
 
-    attn: Annotated[AttnImplementation, Field(description="The attention implementation to use.")] = "flash_attention_2"
+    attn: Annotated[
+        AttnImplementation, Field(description="The attention implementation to use.")
+    ] = "flash_attention_2"
 
     compile: Annotated[
         CompileConfig | None,
@@ -249,13 +258,17 @@ class ModelConfig(BaseConfig):
         """Trust remote code only if the model is from HF."""
         if self.trust_remote_code:
             if self.impl != "hf":
-                raise ValueError("Trust remote code is only supported with the HF implementation.")
+                raise ValueError(
+                    "Trust remote code is only supported with the HF implementation."
+                )
         return self
 
     @model_validator(mode="after")
     def cp_only_with_flash_attn(self):
         if self.cp > 1 and self.attn not in ["flash_attention_2", "flash_attention_3"]:
-            raise ValueError("CP is only supported with flash attention 2 or flash attention 3")
+            raise ValueError(
+                "CP is only supported with flash attention 2 or flash attention 3"
+            )
         return self
 
 
@@ -264,7 +277,9 @@ class TokenizerConfig(BaseConfig):
 
     name: Annotated[
         str | None,
-        Field(description="The name or path of the tokenizer to use. If None, will use the model's default tokenizer."),
+        Field(
+            description="The name or path of the tokenizer to use. If None, will use the model's default tokenizer."
+        ),
     ] = None
 
     trust_remote_code: Annotated[
@@ -293,9 +308,12 @@ class LinearSchedulerConfig(BaseModel):
 
     type: Literal["linear"] = "linear"
 
-    warmup_steps: Annotated[int, Field(ge=0, description="Number of warmup steps for the learning rate scheduler.")] = (
-        10
-    )
+    warmup_steps: Annotated[
+        int,
+        Field(
+            ge=0, description="Number of warmup steps for the learning rate scheduler."
+        ),
+    ] = 10
 
     decay_steps: Annotated[
         int,
@@ -305,7 +323,9 @@ class LinearSchedulerConfig(BaseModel):
         ),
     ] = 10
 
-    min_lr: Annotated[float, Field(ge=0, description="Minimum learning rate to converge to.")] = 0.0
+    min_lr: Annotated[
+        float, Field(ge=0, description="Minimum learning rate to converge to.")
+    ] = 0.0
 
 
 class CosineSchedulerConfig(BaseModel):
@@ -313,20 +333,29 @@ class CosineSchedulerConfig(BaseModel):
 
     type: Literal["cosine"] = "cosine"
 
-    warmup_steps: Annotated[int, Field(ge=0, description="Number of warmup steps for the learning rate scheduler.")] = (
-        10
-    )
+    warmup_steps: Annotated[
+        int,
+        Field(
+            ge=0, description="Number of warmup steps for the learning rate scheduler."
+        ),
+    ] = 10
 
-    min_lr: Annotated[float, Field(ge=0, description="Minimum learning rate to converge to.")] = 0.0
+    min_lr: Annotated[
+        float, Field(ge=0, description="Minimum learning rate to converge to.")
+    ] = 0.0
 
 
-SchedulerConfigType: TypeAlias = ConstantSchedulerConfig | LinearSchedulerConfig | CosineSchedulerConfig
+SchedulerConfigType: TypeAlias = (
+    ConstantSchedulerConfig | LinearSchedulerConfig | CosineSchedulerConfig
+)
 
 
 class BaseOptimizerConfig(BaseModel):
     lr: Annotated[float, Field(ge=0)] = 1e-6
     weight_decay: Annotated[float, Field(ge=0)] = 0.01
-    max_norm: Annotated[float, Field(ge=0, description="Maximum gradient norm to clip.")] = 1.0
+    max_norm: Annotated[
+        float, Field(ge=0, description="Maximum gradient norm to clip.")
+    ] = 1.0
 
 
 class SGDConfig(BaseOptimizerConfig):
@@ -375,6 +404,21 @@ class WeightCheckpointConfig(BaseConfig):
             description="Whether to save LoRA adapters separately before merging into full model weights.",
         ),
     ] = False
+
+    save_adapter_only: Annotated[
+        bool,
+        Field(
+            description="Whether to save only LoRA adapter weights (skip full model weights). Mutually exclusive with save_adapter_separately.",
+        ),
+    ] = False
+
+    @model_validator(mode="after")
+    def validate_mutual_exclusivity(self):
+        if self.save_adapter_only and self.save_adapter_separately:
+            raise ValueError(
+                "save_adapter_only and save_adapter_separately cannot both be True. They are mutually exclusive."
+            )
+        return self
 
 
 class CheckpointConfig(BaseConfig):

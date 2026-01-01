@@ -57,7 +57,9 @@ class AppState(Stateful):
 
     def state_dict(self) -> dict[str, Any]:
         # Automatically manages FSDP FQN's, as well as sets the default state dict type to FSDP.SHARDED_STATE_DICT
-        model_state_dict, optimizer_state_dict = get_state_dict(self.model, self.optimizers)
+        model_state_dict, optimizer_state_dict = get_state_dict(
+            self.model, self.optimizers
+        )
         state_dict = {
             "model": model_state_dict,
             "optimizers": optimizer_state_dict,
@@ -72,7 +74,10 @@ class AppState(Stateful):
 
     def load_state_dict(self, state_dict: dict[str, Any]):
         set_state_dict(
-            self.model, self.optimizers, model_state_dict=state_dict["model"], optim_state_dict=state_dict["optimizers"]
+            self.model,
+            self.optimizers,
+            model_state_dict=state_dict["model"],
+            optim_state_dict=state_dict["optimizers"],
         )
         if self.scheduler is not None:
             self.scheduler.load_state_dict(state_dict["scheduler"])
@@ -89,7 +94,9 @@ class CheckpointManager:
         self.ckpt_dir = get_ckpt_dir(output_dir)
         self.logger = get_logger()
         self.world = get_world()
-        self.ckpt_steps: list[int] = []  # Sorted list of steps that have been checkpointed, only used on master rank
+        self.ckpt_steps: list[int] = (
+            []
+        )  # Sorted list of steps that have been checkpointed, only used on master rank
 
         # Best checkpoint tracking
         self.best_metric: float | None = None
@@ -118,6 +125,7 @@ class CheckpointManager:
         progress: Progress,
         higher_is_better: bool = True,
         dataloader: StatefulDataLoader | None = None,
+        best_exit: bool = False,
     ) -> bool:
         """
         Save checkpoint if metric is best so far.
@@ -132,6 +140,7 @@ class CheckpointManager:
             progress: Training progress state
             higher_is_better: If True, higher metric is better; if False, lower is better
             dataloader: Optional dataloader to checkpoint
+            best_exit: If True, return `is_best` without saving the checkpoint
 
         Returns:
             True if a new best checkpoint was saved, False otherwise
@@ -145,13 +154,18 @@ class CheckpointManager:
         if not is_best:
             return False
 
+        if best_exit:
+            return is_best
+
         self.best_metric = metric_value
         self.best_step = step
 
         best_path = self.get_best_path()
         best_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.logger.info(f"New best {metric_name}={metric_value:.4f} at step {step}, saving to {best_path.parent}")
+        self.logger.info(
+            f"New best {metric_name}={metric_value:.4f} at step {step}, saving to {best_path.parent}"
+        )
         self.save_to_path(best_path, model, optimizers, scheduler, progress, dataloader)
 
         # Save metadata JSON (only on master rank)
@@ -189,12 +203,16 @@ class CheckpointManager:
         if dataloader is not None:
             dataloader_dir = path / "dataloader"
             dataloader_dir.mkdir(parents=True, exist_ok=True)
-            torch.save(dataloader.state_dict(), dataloader_dir / f"rank_{self.world.rank}.pt")
+            torch.save(
+                dataloader.state_dict(), dataloader_dir / f"rank_{self.world.rank}.pt"
+            )
 
         # Save sharded state
         dcp_save(state_dict, checkpoint_id=path)
 
-        self.logger.debug(f"Training checkpoint saved in {time.perf_counter() - start_time:.2f} seconds")
+        self.logger.debug(
+            f"Training checkpoint saved in {time.perf_counter() - start_time:.2f} seconds"
+        )
 
     def load_from_path(
         self,
@@ -228,7 +246,9 @@ class CheckpointManager:
                     )
             dataloader.load_state_dict(torch.load(dataloader_path))
 
-        self.logger.debug(f"Training checkpoint loaded in {time.perf_counter() - start_time:.2f} seconds")
+        self.logger.debug(
+            f"Training checkpoint loaded in {time.perf_counter() - start_time:.2f} seconds"
+        )
 
     def load(
         self,
@@ -243,7 +263,9 @@ class CheckpointManager:
         ckpt_path = self.get_ckpt_path(step)
         if not ckpt_path.exists():
             raise FileNotFoundError(f"Checkpoint not found at {ckpt_path}")
-        self.load_from_path(ckpt_path, model, optimizers, scheduler, progress, dataloader)
+        self.load_from_path(
+            ckpt_path, model, optimizers, scheduler, progress, dataloader
+        )
         self.logger.debug(
             f"Signatures after loading training checkpoint: model={get_module_signature(model, compress=True)}, optimizers={', '.join(get_optimizer_signature(optimizer, compress=True) for optimizer in optimizers)}"
         )
@@ -280,7 +302,9 @@ class CheckpointManager:
             trainer_ckpt_path = self.get_ckpt_path(ckpt_step)
             ckpt_path = trainer_ckpt_path.parent
             if ckpt_path.exists():
-                self.logger.debug(f"Removing past checkpoint for step {ckpt_step} ({ckpt_path})")
+                self.logger.debug(
+                    f"Removing past checkpoint for step {ckpt_step} ({ckpt_path})"
+                )
                 shutil.rmtree(ckpt_path)
 
         # Update checkpoint steps
@@ -303,7 +327,9 @@ class WeightCheckpointManager:
         self.lora_config = lora_config
         self.logger = get_logger()
         self.world = get_world()
-        self.ckpt_steps: list[int] = []  # Sorted list of steps that have been checkpointed, only used on master rank
+        self.ckpt_steps: list[int] = (
+            []
+        )  # Sorted list of steps that have been checkpointed, only used on master rank
         self.keep = keep
 
     def get_step_path(self, step: int) -> Path:
@@ -325,11 +351,28 @@ class WeightCheckpointManager:
         self.logger.debug(f"Saving weight checkpoint to {path}")
         # Suppress torch.distributed warnings during checkpoint saving
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=FutureWarning, module="torch.distributed")
-            warnings.filterwarnings("ignore", category=UserWarning, module="torch.distributed.*")
+            warnings.filterwarnings(
+                "ignore", category=FutureWarning, module="torch.distributed"
+            )
+            warnings.filterwarnings(
+                "ignore", category=UserWarning, module="torch.distributed.*"
+            )
 
             # Save weights
-            save_state_dict(state_dict, path, self.config.save_format, self.config.save_sharded)
+            if self.config.save_adapter_only and lora_state_dict is not None:
+                # Save only LoRA adapter weights
+                save_state_dict(
+                    lora_state_dict,
+                    path,  # Use same path so vLLM can find it for weight updates
+                    self.config.save_format,
+                    self.config.save_sharded,
+                    adapter=True,
+                )
+            else:
+                # Save full model weights
+                save_state_dict(
+                    state_dict, path, self.config.save_format, self.config.save_sharded
+                )
 
             # Save model config, generation arguments and tokenizer
             model.config.save_pretrained(path)
@@ -337,13 +380,19 @@ class WeightCheckpointManager:
                 model.generation_config.save_pretrained(path)
             tokenizer.save_pretrained(path)
 
-        if self.config.save_adapter_separately and lora_state_dict is not None:
+        # Save LoRA config if adapter-only or save_adapter_separately
+        if self.config.save_adapter_only and lora_state_dict is not None:
+            if self.lora_config:
+                save_lora_config(self.lora_config, model, path)
+        elif self.config.save_adapter_separately and lora_state_dict is not None:
             adapter_path = path / "lora_adapters"
             adapter_path.mkdir(parents=True, exist_ok=True)
             torch.save(lora_state_dict, adapter_path / "adapter_model.bin")
             if self.lora_config:
                 save_lora_config(self.lora_config, model, adapter_path)  # Pass model
-        self.logger.debug(f"Saved weight checkpoint to {path} in {time.perf_counter() - start_time:.2f} seconds")
+        self.logger.debug(
+            f"Saved weight checkpoint to {path} in {time.perf_counter() - start_time:.2f} seconds"
+        )
 
     def save(
         self,
@@ -358,20 +407,32 @@ class WeightCheckpointManager:
         # Gather all weights on master rank
         self.logger.debug("Gathering weights on master rank for weight checkpoint")
         start_time = time.perf_counter()
-        state_dict = gather_weights_on_master(model, self.world.is_master, dtype=torch.bfloat16)
-        self.logger.debug(f"Gathered weights on master rank in {time.perf_counter() - start_time:.2f} seconds")
+        state_dict = gather_weights_on_master(
+            model, self.world.is_master, dtype=torch.bfloat16
+        )
+        self.logger.debug(
+            f"Gathered weights on master rank in {time.perf_counter() - start_time:.2f} seconds"
+        )
 
         if has_lora_layers(model):
-            self.logger.debug("Getting LoRA state dict on master rank for weight checkpoint")
+            self.logger.debug(
+                "Getting LoRA state dict on master rank for weight checkpoint"
+            )
             start_time = time.perf_counter()
             lora_state_dict = get_adapter_state_dict(model, self.world.is_master)
-            self.logger.debug(f"Got LoRA state dict on master rank in {time.perf_counter() - start_time:.2f} seconds")
+            self.logger.debug(
+                f"Got LoRA state dict on master rank in {time.perf_counter() - start_time:.2f} seconds"
+            )
         else:
             lora_state_dict = None
 
         # Convert PrimeRL format to HF format if needed
-        if isinstance(model, PreTrainedModelPrimeRL) and model.is_prime_state_dict(state_dict):
-            self.logger.debug("Converting PrimeRL format to HF format for weight checkpoint")
+        if isinstance(model, PreTrainedModelPrimeRL) and model.is_prime_state_dict(
+            state_dict
+        ):
+            self.logger.debug(
+                "Converting PrimeRL format to HF format for weight checkpoint"
+            )
             start_time = time.perf_counter()
             model.convert_to_hf(state_dict)
             self.logger.debug(
@@ -394,7 +455,9 @@ class WeightCheckpointManager:
         for ckpt_step in ckpt_steps_to_delete:
             ckpt_path = self.get_step_path(ckpt_step)
             if ckpt_path.exists():
-                self.logger.debug(f"Removing past checkpoint for step {ckpt_step} ({ckpt_path})")
+                self.logger.debug(
+                    f"Removing past checkpoint for step {ckpt_step} ({ckpt_path})"
+                )
                 shutil.rmtree(ckpt_path)
 
         # Update checkpoint steps
@@ -402,7 +465,9 @@ class WeightCheckpointManager:
 
 
 def setup_ckpt_managers(
-    output_dir: Path, ckpt_config: CheckpointConfig | None, lora_config: LoRAConfig | None = None
+    output_dir: Path,
+    ckpt_config: CheckpointConfig | None,
+    lora_config: LoRAConfig | None = None,
 ) -> tuple[CheckpointManager | None, WeightCheckpointManager | None]:
     if ckpt_config is None:
         return None, None

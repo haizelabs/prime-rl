@@ -29,7 +29,9 @@ class BaseDataConfig(BaseModel):
         if self.batch_size % self.micro_batch_size != 0:
             raise ValueError("Batch size must be divisible by micro batch size")
         if self.batch_size < self.micro_batch_size:
-            raise ValueError("Batch size must be greater than or equal to micro batch size")
+            raise ValueError(
+                "Batch size must be greater than or equal to micro batch size"
+            )
         return self
 
 
@@ -45,10 +47,18 @@ class FakeDataConfig(BaseDataConfig):
 class LossMaskConfig(BaseConfig):
     """Configures which message types contribute to the loss. If True, the loss_mask will be True and the message type will contribute to the loss."""
 
-    system: Annotated[bool, Field(description="Whether system messages contribute to the loss.")] = False
-    user: Annotated[bool, Field(description="Whether user messages contribute to the loss.")] = False
-    assistant: Annotated[bool, Field(description="Whether assistant messages contribute to the loss.")] = True
-    tool: Annotated[bool, Field(description="Whether tool messages contribute to the loss.")] = False
+    system: Annotated[
+        bool, Field(description="Whether system messages contribute to the loss.")
+    ] = False
+    user: Annotated[
+        bool, Field(description="Whether user messages contribute to the loss.")
+    ] = False
+    assistant: Annotated[
+        bool, Field(description="Whether assistant messages contribute to the loss.")
+    ] = True
+    tool: Annotated[
+        bool, Field(description="Whether tool messages contribute to the loss.")
+    ] = False
 
 
 class SFTDataConfig(BaseDataConfig):
@@ -56,19 +66,29 @@ class SFTDataConfig(BaseDataConfig):
 
     type: Literal["sft"] = "sft"
 
-    name: Annotated[str, Field(description="Name or path of the HF dataset to use.")] = (
-        "PrimeIntellect/Reverse-Text-SFT"
-    )
-    subsets: Annotated[list[str] | None, Field(description="Subsets to use from the HF dataset.")] = None
-    splits: Annotated[list[str] | None, Field(description="Splits to use from the HF dataset.")] = None
-    probabilities: Annotated[list[float] | None, Field(description="Probabilities to use for each subset/split.")] = (
-        None
-    )
+    name: Annotated[
+        str, Field(description="Name or path of the HF dataset to use.")
+    ] = "PrimeIntellect/Reverse-Text-SFT"
+    subsets: Annotated[
+        list[str] | None, Field(description="Subsets to use from the HF dataset.")
+    ] = None
+    splits: Annotated[
+        list[str] | None, Field(description="Splits to use from the HF dataset.")
+    ] = None
+    probabilities: Annotated[
+        list[float] | None,
+        Field(description="Probabilities to use for each subset/split."),
+    ] = None
     stopping_strategy: Annotated[
         Literal["first_exhausted", "all_exhausted"],
         Field(description=""),
     ] = "all_exhausted"
-    shuffle: Annotated[bool, Field(description="Whether to shuffle the dataset at the beginning of each epoch.")] = True
+    shuffle: Annotated[
+        bool,
+        Field(
+            description="Whether to shuffle the dataset at the beginning of each epoch."
+        ),
+    ] = True
     seed: Annotated[
         int,
         Field(
@@ -119,7 +139,9 @@ class SFTTrainerConfig(BaseSettings):
     optim: Annotated[OptimizerConfigType, Field(discriminator="type")] = AdamWConfig()
 
     # The learning rate scheduler configuration
-    scheduler: Annotated[SchedulerConfigType, Field(discriminator="type")] = ConstantSchedulerConfig()
+    scheduler: Annotated[SchedulerConfigType, Field(discriminator="type")] = (
+        ConstantSchedulerConfig()
+    )
 
     # The checkpoint configuration
     ckpt: CheckpointConfig | None = None
@@ -139,10 +161,14 @@ class SFTTrainerConfig(BaseSettings):
 
     max_steps: Annotated[
         int | None,
-        Field(description="Maximum number of steps to run training for. If None, will run indefinitely."),
+        Field(
+            description="Maximum number of steps to run training for. If None, will run indefinitely."
+        ),
     ] = None
 
-    memory_profiler_path: Annotated[Path | None, Field(description="Path to write memory profile to.")] = None
+    memory_profiler_path: Annotated[
+        Path | None, Field(description="Path to write memory profile to.")
+    ] = None
 
     bench: Annotated[
         bool,
@@ -151,7 +177,9 @@ class SFTTrainerConfig(BaseSettings):
         ),
     ] = False
 
-    trace_path: Annotated[Path | None, Field(description="Path to write pytorch profiler trace to.")] = None
+    trace_path: Annotated[
+        Path | None, Field(description="Path to write pytorch profiler trace to.")
+    ] = None
 
     dist_timeout_seconds: Annotated[
         int,
@@ -161,11 +189,13 @@ class SFTTrainerConfig(BaseSettings):
     ] = 600
 
     loss_impl: Annotated[
-        Literal["liger", "torch"], Field(description="Implementation of the cross entropy loss function to use.")
+        Literal["liger", "torch"],
+        Field(description="Implementation of the cross entropy loss function to use."),
     ] = "torch"
 
     heartbeat: Annotated[
-        HeartbeatConfig | None, Field(description="The heartbeat config for monitoring training progress.")
+        HeartbeatConfig | None,
+        Field(description="The heartbeat config for monitoring training progress."),
     ] = None
 
     @model_validator(mode="after")
@@ -198,7 +228,9 @@ class SFTTrainerConfig(BaseSettings):
     def validate_seq_len(self):
         if self.data.pack_function == "stack":
             if self.data.seq_len % 256 != 0:
-                raise ValueError("The sequence length must be divisible by 256 when using pack function stack")
+                raise ValueError(
+                    "The sequence length must be divisible by 256 when using pack function stack"
+                )
         return self
 
     @model_validator(mode="after")
@@ -214,13 +246,22 @@ class SFTTrainerConfig(BaseSettings):
 
     @model_validator(mode="after")
     def validate_lora_adapter_saving(self):
-        if self.ckpt and self.ckpt.weights and self.ckpt.weights.save_adapter_separately:
-            lora_enabled = self.model and self.model.lora
-            if not lora_enabled:
-                raise ValueError(
-                    "save_adapter_separately=True requires LoRA to be enabled. "
-                    "Set model.lora or disable save_adapter_separately."
-                )
+        if self.ckpt and self.ckpt.weights:
+            if (
+                self.ckpt.weights.save_adapter_separately
+                or self.ckpt.weights.save_adapter_only
+            ):
+                lora_enabled = self.model and self.model.lora
+                if not lora_enabled:
+                    options = []
+                    if self.ckpt.weights.save_adapter_separately:
+                        options.append("save_adapter_separately")
+                    if self.ckpt.weights.save_adapter_only:
+                        options.append("save_adapter_only")
+                    raise ValueError(
+                        f"{' and '.join(options)}=True requires LoRA to be enabled. "
+                        "Set model.lora or disable the adapter saving option(s)."
+                    )
         return self
 
     @model_validator(mode="after")

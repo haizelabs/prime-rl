@@ -20,25 +20,54 @@ from prime_rl.utils.pydantic_config import BaseConfig, BaseSettings
 class LossConfig(BaseConfig):
     """Base config for loss."""
 
-    ratio_type: Annotated[Literal["token", "sequence"], Field(description="Type of importance ratio to use.")] = "token"
+    ratio_type: Annotated[
+        Literal["token", "sequence"],
+        Field(description="Type of importance ratio to use."),
+    ] = "token"
 
     token_mask_high: Annotated[
-        float, 
-        Field(ge=0, description="The high threshold for token importance ratio to mask.")] = 8.0 
+        float,
+        Field(
+            ge=0, description="The high threshold for token importance ratio to mask."
+        ),
+    ] = 8.0
     token_mask_low: Annotated[
-        float, 
-        Field(ge=0, description="The low threshold for token importance ratio to mask.")] = 0.125
-    sequence_clip_high: Annotated[float, Field(ge=0, description="The high threshold for sequence importance ratio to clip.")] = 10.0
-    geo_mask_high: Annotated[float, Field(ge=0, description="The high threshold for geo importance ratio to mask.")] = 10.0
-    geo_mask_low: Annotated[float, Field(ge=0, description="The low threshold for geo importance ratio to mask.")] = 0.1
-    kl_tau: Annotated[float, Field(ge=0, description="The tau for KL divergence.")] = 0.0
+        float,
+        Field(
+            ge=0, description="The low threshold for token importance ratio to mask."
+        ),
+    ] = 0.125
+    sequence_clip_high: Annotated[
+        float,
+        Field(
+            ge=0,
+            description="The high threshold for sequence importance ratio to clip.",
+        ),
+    ] = 10.0
+    geo_mask_high: Annotated[
+        float,
+        Field(ge=0, description="The high threshold for geo importance ratio to mask."),
+    ] = 10.0
+    geo_mask_low: Annotated[
+        float,
+        Field(ge=0, description="The low threshold for geo importance ratio to mask."),
+    ] = 0.1
+    kl_tau: Annotated[float, Field(ge=0, description="The tau for KL divergence.")] = (
+        0.0
+    )
     sequence_mask_low: Annotated[
         float,
-        Field(ge=0, description="If set, masks entire sequences when any generated token has an importance ratio below this value."),
+        Field(
+            ge=0,
+            description="If set, masks entire sequences when any generated token has an importance ratio below this value.",
+        ),
     ] = 0.0
     sequence_mask_high: Annotated[
         float,
-        Field(ge=0, description="If set, masks entire sequences when any generated token has an importance ratio above this value."),
+        Field(
+            ge=0,
+            description="If set, masks entire sequences when any generated token has an importance ratio above this value.",
+        ),
     ] = 100.0
 
     @model_validator(mode="after")
@@ -63,29 +92,42 @@ class FakeDataLoaderConfig(BaseConfig):
 
     batch_size: Annotated[int, Field(ge=1)] = 2
     generate_samples: Annotated[
-        bool, Field(description="Whether to generate separate samples and pack them into a single micro batch.")
+        bool,
+        Field(
+            description="Whether to generate separate samples and pack them into a single micro batch."
+        ),
     ] = False
 
 
 class DataLoaderConfig(BaseConfig):
     """Configures the data loader used for training."""
 
-    fake: Annotated[FakeDataLoaderConfig | None, Field(description="Whether to use a fake data loader.")] = None
+    fake: Annotated[
+        FakeDataLoaderConfig | None,
+        Field(description="Whether to use a fake data loader."),
+    ] = None
 
 
 class BaseWeightBroadcastConfig(BaseModel):
     """Configures the base weight broadcast."""
 
-    adapter_only: Annotated[bool, Field(description="Whether to save LoRA adapters only for weight broadcast.")] = False
+    adapter_only: Annotated[
+        bool,
+        Field(description="Whether to save LoRA adapters only for weight broadcast."),
+    ] = False
 
 
 class FileSystemWeightBroadcastConfig(BaseWeightBroadcastConfig):
     """Configures the weight broadcast."""
 
     type: Literal["filesystem"] = "filesystem"
-    save_sharded: Annotated[bool, Field(description="Whether to save the weight checkpoint in sharded format.")] = True
+    save_sharded: Annotated[
+        bool,
+        Field(description="Whether to save the weight checkpoint in sharded format."),
+    ] = True
     save_format: Annotated[
-        Literal["safetensors", "torch"], Field(description="The format to save the weight checkpoint in.")
+        Literal["safetensors", "torch"],
+        Field(description="The format to save the weight checkpoint in."),
     ] = "safetensors"
 
 
@@ -93,14 +135,24 @@ class NCCLWeightBroadcastConfig(BaseWeightBroadcastConfig):
     """Configures the NCCL broadcast."""
 
     type: Literal["nccl"] = "nccl"
-    host: Annotated[str, Field(description="The host to use for the NCCL broadcast.")] = "localhost"
-    port: Annotated[int, Field(description="The port to use for the NCCL broadcast.")] = 29501
-    timeout: Annotated[int, Field(description="The timeout in seconds to use for the NCCL broadcast.")] = 1200
+    host: Annotated[
+        str, Field(description="The host to use for the NCCL broadcast.")
+    ] = "localhost"
+    port: Annotated[
+        int, Field(description="The port to use for the NCCL broadcast.")
+    ] = 29501
+    timeout: Annotated[
+        int, Field(description="The timeout in seconds to use for the NCCL broadcast.")
+    ] = 1200
     # TODO: Should not be configurable, but auto-inferred
-    inference_world_size: Annotated[int, Field(description="The number of GPUs used for inference.")] = 1
+    inference_world_size: Annotated[
+        int, Field(description="The number of GPUs used for inference.")
+    ] = 1
 
 
-WeightBroadcastConfigType: TypeAlias = FileSystemWeightBroadcastConfig | NCCLWeightBroadcastConfig
+WeightBroadcastConfigType: TypeAlias = (
+    FileSystemWeightBroadcastConfig | NCCLWeightBroadcastConfig
+)
 
 
 class RLTrainerConfig(BaseSettings):
@@ -122,16 +174,20 @@ class RLTrainerConfig(BaseSettings):
     optim: Annotated[OptimizerConfigType, Field(discriminator="type")] = AdamWConfig()
 
     # The learning rate scheduler configuration
-    scheduler: Annotated[SchedulerConfigType, Field(discriminator="type")] = ConstantSchedulerConfig()
+    scheduler: Annotated[SchedulerConfigType, Field(discriminator="type")] = (
+        ConstantSchedulerConfig()
+    )
 
     # The checkpoint configuration
     ckpt: CheckpointConfig | None = None
 
-    weight_broadcast: Annotated[WeightBroadcastConfigType, Field(discriminator="type")] = (
-        FileSystemWeightBroadcastConfig()
-    )
+    weight_broadcast: Annotated[
+        WeightBroadcastConfigType, Field(discriminator="type")
+    ] = FileSystemWeightBroadcastConfig()
 
-    rollout_transport: Annotated[TransportConfigType, Field(discriminator="type")] = FileSystemTransportConfig()
+    rollout_transport: Annotated[TransportConfigType, Field(discriminator="type")] = (
+        FileSystemTransportConfig()
+    )
 
     # The logging configuration
     log: LogConfig = LogConfig()
@@ -161,7 +217,9 @@ class RLTrainerConfig(BaseSettings):
         ),
     ] = 1
 
-    memory_profiler_path: Annotated[Path | None, Field(description="Path to write memory profile to.")] = None
+    memory_profiler_path: Annotated[
+        Path | None, Field(description="Path to write memory profile to.")
+    ] = None
 
     bench: Annotated[
         bool,
@@ -170,7 +228,9 @@ class RLTrainerConfig(BaseSettings):
         ),
     ] = False
 
-    trace_path: Annotated[Path | None, Field(description="Path to write pytorch profiler trace to.")] = None
+    trace_path: Annotated[
+        Path | None, Field(description="Path to write pytorch profiler trace to.")
+    ] = None
 
     dist_timeout_seconds: Annotated[
         int,
@@ -180,7 +240,8 @@ class RLTrainerConfig(BaseSettings):
     ] = 600
 
     heartbeat: Annotated[
-        HeartbeatConfig | None, Field(description="The heartbeat config for monitoring training progress.")
+        HeartbeatConfig | None,
+        Field(description="The heartbeat config for monitoring training progress."),
     ] = None
 
     max_concurrent_runs: Annotated[
@@ -214,13 +275,22 @@ class RLTrainerConfig(BaseSettings):
 
     @model_validator(mode="after")
     def validate_lora_adapter_saving(self):
-        if self.ckpt and self.ckpt.weights and self.ckpt.weights.save_adapter_separately:
-            lora_enabled = self.model and self.model.lora
-            if not lora_enabled:
-                raise ValueError(
-                    "save_adapter_separately=True requires LoRA to be enabled. "
-                    "Set model.lora or disable save_adapter_separately."
-                )
+        if self.ckpt and self.ckpt.weights:
+            if (
+                self.ckpt.weights.save_adapter_separately
+                or self.ckpt.weights.save_adapter_only
+            ):
+                lora_enabled = self.model and self.model.lora
+                if not lora_enabled:
+                    options = []
+                    if self.ckpt.weights.save_adapter_separately:
+                        options.append("save_adapter_separately")
+                    if self.ckpt.weights.save_adapter_only:
+                        options.append("save_adapter_only")
+                    raise ValueError(
+                        f"{' and '.join(options)}=True requires LoRA to be enabled. "
+                        "Set model.lora or disable the adapter saving option(s)."
+                    )
         return self
 
     @model_validator(mode="after")
@@ -238,7 +308,9 @@ class RLTrainerConfig(BaseSettings):
     @model_validator(mode="after")
     def validate_lora_broadcast(self):
         if self.weight_broadcast.adapter_only and not self.model.lora:
-            raise ValueError("Adapter only weight broadcast requires LoRA to be enabled.")
+            raise ValueError(
+                "Adapter only weight broadcast requires LoRA to be enabled."
+            )
         if self.weight_broadcast.type == "nccl" and self.weight_broadcast.adapter_only:
             # TODO: Support this
             raise ValueError("NCCL weight broadcast does not support LoRA yet.")
